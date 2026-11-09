@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Secret Backroom Casino - Poker Statistics</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #050508;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      user-select: none;
+    }
+    #canvas-container {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+    /* UI Overlays */
+    .ui-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .interactive {
+      pointer-events: auto;
+    }
+    .hud-panel {
+      background: rgba(15, 15, 20, 0.88);
+      border: 1px solid rgba(212, 175, 55, 0.5);
+      border-radius: 8px;
+      padding: 15px 20px;
+      color: #f0f0f0;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.85);
+      backdrop-filter: blur(6px);
+    }
+    h1, h2, h3 {
+      margin: 0 0 10px 0;
+      color: #d4af37;
+      font-family: serif;
+      letter-spacing: 1px;
+    }
+    .btn {
+      background: linear-gradient(135deg, #d4af37, #aa8c2c);
+      color: #111;
+      border: none;
+      padding: 10px 18px;
+      font-weight: bold;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 1px;
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(212,175,55,0.4);
+    }
+    .btn:disabled {
+      background: #444;
+      color: #888;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .btn-secondary {
+      background: #2a2a35;
+      color: #d4af37;
+      border: 1px solid #d4af37;
+    }
+    .btn-buyin {
+      background: linear-gradient(135deg, #2ecc71, #27ae60);
+      color: #fff;
+    }
+    /* Modals */
+    .modal-backdrop {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.88);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .modal-box {
+      background: #111218;
+      border: 2px solid #d4af37;
+      border-radius: 10px;
+      padding: 30px;
+      width: 380px;
+      text-align: center;
+      color: #fff;
+      box-shadow: 0 0 40px rgba(212,175,55,0.25);
+    }
+    .modal-box input {
+      width: 100%;
+      padding: 12px;
+      margin: 15px 0;
+      background: #1c1d26;
+      border: 1px solid #444;
+      color: #fff;
+      border-radius: 4px;
+      box-sizing: border-box;
+      font-size: 16px;
+      text-align: center;
+    }
+    /* Action Bar */
+    #action-bar {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 10px;
+      background: rgba(10, 10, 15, 0.9);
+      padding: 12px 20px;
+      border-radius: 8px;
+      border: 1px solid rgba(212, 175, 55, 0.3);
+    }
+    .raise-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #d4af37;
+      font-size: 13px;
+    }
+    .raise-controls input[type="range"] {
+      accent-color: #d4af37;
+      cursor: pointer;
+    }
+    /* Stats & Info HUD */
+    #stats-hud {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      width: 280px;
+      display: none;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 6px 0;
+      font-size: 14px;
+      border-bottom: 1px dashed rgba(255,255,255,0.1);
+      padding-bottom: 4px;
+    }
+    #out-banner {
+      display: none;
+      color: #ff4444;
+      font-weight: bold;
+      font-size: 18px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 10px;
+    }
+  </style>
+
+  <!-- Three.js Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+  <!-- Name Entry Modal -->
+  <div id="nameModal" class="modal-backdrop">
+    <div class="modal-box">
+      <h2>Secret Backroom Casino</h2>
+      <p style="color: #aaa; font-size: 13px;">Enter your alias to take your seat at the round table.</p>
+      <input type="text" id="playerNameInput" placeholder="Your Name / Alias" maxlength="15" value="Student">
+      <button class="btn" onclick="joinGameWithAlias()">Take Seat & Join</button>
+    </div>
+  </div>
+
+  <!-- Operator HUD Button -->
+  <button onclick="toggleOperatorModal()" style="position: fixed; top: 15px; right: 15px; z-index: 999; background: #8b0000; color: #fff; border: 1px solid #ff4444; padding: 8px 14px; border-radius: 4px; font-weight: bold; cursor: pointer;">
+    🔒 Admin HUD
+  </button>
+
+  <!-- Operator Control Modal (No visible password hint) -->
+  <div id="operatorModal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 340px; background: rgba(15, 15, 20, 0.95); border: 2px solid #d4af37; border-radius: 8px; padding: 20px; color: #fff; z-index: 10000; box-shadow: 0 0 25px rgba(0,0,0,0.8);">
+    <h3 style="margin-top: 0; color: #d4af37; border-bottom: 1px solid #444; padding-bottom: 8px;">Teacher Operator HUD</h3>
+    
+    <div id="opAuth">
+      <label style="font-size: 13px; display: block; margin-bottom: 6px;">Enter Passcode:</label>
+      <input type="password" id="opPasswordInput" placeholder="Passcode" style="width: 100%; padding: 8px; margin-bottom: 10px; background: #222; border: 1px solid #555; color: #fff; box-sizing: border-box;">
+      <button onclick="authenticateOperator()" style="width: 100%; padding: 8px; background: #d4af37; color: #000; font-weight: bold; border: none; border-radius: 4px; cursor: pointer;">Unlock Controls</button>
+    </div>
+
+    <div id="opControls" style="display: none;">
+      <div style="margin-bottom: 15px;">
+        <h4 style="margin: 8px 0; color: #aaa; font-size: 14px;">Manage Stacks (Chips)</h4>
+        <input type="text" id="targetSeat" placeholder="Seat Index (0-5)" style="width: 48%; padding: 6px; background: #222; border: 1px solid #555; color: #fff; box-sizing: border-box;">
+        <input type="number" id="chipAmount" placeholder="New Total" style="width: 48%; padding: 6px; background: #222; border: 1px solid #555; color: #fff; box-sizing: border-box; float: right;">
+        <button onclick="adminSetChips()" style="width: 100%; margin-top: 6px; padding: 6px; background: #333; color: #fff; border: 1px solid #666; cursor: pointer;">Set Player Chips</button>
+      </div>
+
+      <div style="margin-bottom: 15px;">
+        <h4 style="margin: 8px 0; color: #aaa; font-size: 14px;">Rig Community Cards</h4>
+        <input type="text" id="riggedCards" placeholder="e.g. As,Ah,Kd,10s,Jc" style="width: 100%; padding: 6px; background: #222; border: 1px solid #555; color: #fff; box-sizing: border-box; margin-bottom: 6px;">
+        <button onclick="adminSetCards()" style="width: 100%; padding: 6px; background: #333; color: #fff; border: 1px solid #666; cursor: pointer;">Force Board Cards</button>
+      </div>
+
+      <div style="border-top: 1px solid #444; padding-top: 10px;">
+        <button onclick="adminResetGame()" style="width: 100%; padding: 8px; background: #a00; color: #fff; font-weight: bold; border: none; border-radius: 4px; cursor: pointer;">Reset Entire Table</button>
+      </div>
+    </div>
+    <button onclick="toggleOperatorModal()" style="margin-top: 15px; width: 100%; background: transparent; border: none; color: #888; cursor: pointer; text-decoration: underline; font-size: 12px;">Close</button>
+  </div>
+
+  <!-- 3D Canvas Container -->
+  <div id="canvas-container"></div>
+
+  <!-- In-Game UI -->
+  <div class="ui-overlay">
+    <!-- Top Bar -->
+    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+      <div class="hud-panel interactive" style="width: 240px;">
+        <h3 id="playerDisplayName" style="font-size: 16px; margin-bottom: 5px;">Player</h3>
+        <div style="font-size: 13px; color: #aaa;">Chips: <span id="playerChipCount" style="color: #d4af37; font-weight: bold;">350</span></div>
+        <div style="font-size: 11px; color: #888; margin-top: 3px;">Starting Stack: 1x$100, 3x$50, 10x$10</div>
+        <button id="btnBuyIn" class="btn btn-buyin" style="width: 100%; margin-top: 10px;" onclick="playerBuyIn()">Buy In ($10)</button>
+      </div>
+      
+      <div class="hud-panel interactive" style="text-align: center;">
+        <h2 style="font-size: 18px; margin-bottom: 2px;">Table Pot</h2>
+        <div id="potDisplay" style="font-size: 26px; color: #d4af37; font-weight: bold;">0</div>
+        <div id="timerDisplay" style="font-size: 13px; color: #e74c3c; margin-top: 5px; font-weight: bold;">Waiting for first buy-in...</div>
+        <button class="btn btn-secondary" style="margin-top: 8px; padding: 4px 10px; font-size: 10px;" onclick="toggleStatsHUD()">Toggle Probability HUD</button>
+      </div>
+    </div>
+
+    <!-- Hidden Statistics HUD for Lesson -->
+    <div id="stats-hud" class="hud-panel">
+      <h3>Statistical Odds</h3>
+      <div class="stat-row"><span>Hand Win Probability:</span> <span id="statWinProb" style="color: #d4af37;">--</span></div>
+      <div class="stat-row"><span>Pot Odds Ratio:</span> <span id="statPotOdds">--</span></div>
+      <div class="stat-row"><span>Expected Value (EV):</span> <span id="statEV">--</span></div>
+      <div class="stat-row"><span>Outs Count:</span> <span id="statOuts">--</span></div>
+    </div>
+
+    <!-- Bottom Action Controls -->
+    <div style="display: flex; flex-direction: column; align-items: center;">
+      <div id="out-banner">YOU ARE ELIMINATED (OUT OF CHIPS)</div>
+      <div id="action-bar" class="interactive">
+        <button id="btnFold" class="btn" onclick="playerAction('fold')">Fold</button>
+        <button id="btnCheck" class="btn" onclick="playerAction('check')">Check</button>
+        
+        <div class="raise-controls">
+          <button id="btnRaise" class="btn" onclick="submitRaise()">Bet / Raise</button>
+          <input type="range" id="raiseSlider" min="10" max="350" step="10" value="10" oninput="updateSliderLabel(this.value)">
+          <span id="raiseValueLabel" style="min-width: 45px; font-weight: bold;">10</span>
+        </div>
+      </div>
+      <div class="hud-panel interactive" style="padding: 6px 15px; font-size: 12px; color: #aaa; margin-top: 5px;">
+        Connected Players: <span id="onlineCount" style="color: #fff; font-weight: bold;">1</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase & Game Engine Scripts -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-analytics.js";
+    import { getDatabase, ref, set, get, update, onValue } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDZBFjEYY2Lv3P5BIUEHRd1oPkNa_NIcgk",
+      authDomain: "poker-b2ce3.firebaseapp.com",
+      projectId: "poker-b2ce3",
+      storageBucket: "poker-b2ce3.firebasestorage.app",
+      messagingSenderId: "170114349641",
+      appId: "1:170114349641:web:5e3c525fc8abaa0ffd5d98",
+      measurementId: "G-1F3QEHZBWY"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+    const db = getDatabase(app);
+
+    const myPlayerId = 'player_' + Math.random().toString(36).substring(2, 9);
+    let myName = 'Student';
+    let mySeat = 0;
+    let myChips = 350;
+    let isEliminated = false;
+    let hasBoughtIn = false;
+
+    window.joinGameWithAlias = function() {
+      const inputVal = document.getElementById('playerNameInput').value.trim();
+      if (inputVal) myName = inputVal;
+      document.getElementById('playerDisplayName').innerText = myName;
+      document.getElementById('nameModal').style.display = 'none';
+
+      mySeat = Math.floor(Math.random() * 6);
+      const playerRef = ref(db, `rooms/table_1/players/${myPlayerId}`);
+      set(playerRef, {
+        name: myName,
+        chips: myChips,
+        seat: mySeat,
+        status: 'active'
+      });
+      syncUIControls();
+    };
+
+    window.updateSliderLabel = function(val) {
+      document.getElementById('raiseValueLabel').innerText = val;
+    };
+
+    window.toggleOperatorModal = function() {
+      const modal = document.getElementById('operatorModal');
+      modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
+    };
+
+    window.authenticateOperator = function() {
+      if (document.getElementById('opPasswordInput').value === '1234') {
+        document.getElementById('opAuth').style.display = 'none';
+        document.getElementById('opControls').style.display = 'block';
+      } else {
+        alert('Incorrect passcode');
+      }
+    };
+
+    window.adminSetChips = function() {
+      const seat = document.getElementById('targetSeat').value.trim();
+      const newAmount = parseInt(document.getElementById('chipAmount').value);
+      if (seat === '' || isNaN(newAmount)) return alert('Enter valid seat and amount');
+
+      get(ref(db, 'rooms/table_1/players')).then(snapshot => {
+        const players = snapshot.val();
+        if (!players) return;
+        for (let id in players) {
+          if (players[id].seat == seat) {
+            const newStatus = newAmount <= 0 ? 'out' : 'active';
+            update(ref(db, `rooms/table_1/players/${id}`), { chips: newAmount, status: newStatus });
+            alert(`Updated seat ${seat} (${players[id].name}) to ${newAmount} chips.`);
+            return;
+          }
+        }
+        alert('Seat not found');
+      });
+    };
+
+    window.adminSetCards = function() {
+      const raw = document.getElementById('riggedCards').value.trim();
+      if (!raw) return;
+      update(ref(db, 'rooms/table_1'), { communityCards: raw.split(',').map(c => c.trim()) });
+      alert('Board cards updated.');
+    };
+
+    window.adminResetGame = function() {
+      if (!confirm('Reset table?')) return;
+      set(ref(db, 'rooms/table_1'), { pot: 0, communityCards: [], buyInTime: null, players: {} });
+      alert('Table reset.');
+    };
+
+    window.toggleStatsHUD = function() {
+      const hud = document.getElementById('stats-hud');
+      hud.style.display = hud.style.display === 'none' ? 'block' : 'none';
+    };
+
+    window.playerBuyIn = function() {
+      if (hasBoughtIn || myChips < 10) return;
+      myChips -= 10;
+      hasBoughtIn = true;
+      document.getElementById('playerChipCount').innerText = myChips;
+      document.getElementById('btnBuyIn').disabled = true;
+      document.getElementById('btnBuyIn').innerText = 'Bought In ($10)';
+
+      update(ref(db, `rooms/table_1/players/${myPlayerId}`), { chips: myChips });
+
+      get(ref(db, 'rooms/table_1')).then(snap => {
+        const data = snap.val() || {};
+        const pot = (data.pot || 0) + 10;
+        const updates = { pot: pot };
+        if (!data.buyInTime) {
+          updates.buyInTime = Date.now() + 20000; // 20 second timer
+        }
+        update(ref(db, 'rooms/table_1'), updates);
+      });
+    };
+
+    function syncUIControls() {
+      const slider = document.getElementById('raiseSlider');
+      if (myChips <= 0) {
+        isEliminated = true;
+        document.getElementById('out-banner').style.display = 'block';
+        document.getElementById('btnFold').disabled = true;
+        document.getElementById('btnCheck').disabled = true;
+        document.getElementById('btnRaise').disabled = true;
+        slider.disabled = true;
+      } else {
+        isEliminated = false;
+        document.getElementById('out-banner').style.display = 'none';
+        document.getElementById('btnFold').disabled = false;
+        document.getElementById('btnCheck').disabled = false;
+        document.getElementById('btnRaise').disabled = false;
+        slider.disabled = false;
+        slider.min = Math.min(10, myChips);
+        slider.max = myChips;
+        slider.value = Math.min(10, myChips);
+        document.getElementById('raiseValueLabel').innerText = slider.value;
+      }
+    }
+
+    window.submitRaise = function() {
+      const amount = parseInt(document.getElementById('raiseSlider').value);
+      playerAction('bet', amount);
+    };
+
+    window.playerAction = function(action, amount = 0) {
+      if (isEliminated) return;
+
+      if (action === 'bet') {
+        if (amount > myChips) amount = myChips;
+        myChips -= amount;
+        document.getElementById('playerChipCount').innerText = myChips;
+        
+        const status = myChips <= 0 ? 'out' : 'active';
+        update(ref(db, `rooms/table_1/players/${myPlayerId}`), { chips: myChips, status: status });
+        
+        get(ref(db, 'rooms/table_1/pot')).then(snap => {
+          const pot = (snap.val() || 0) + amount;
+          update(ref(db, 'rooms/table_1'), { pot: pot });
+        });
+      }
+      syncUIControls();
+      updateStatistics();
+    };
+
+    function updateStatistics() {
+      document.getElementById('statWinProb').innerText = (Math.random() * 30 + 15).toFixed(1) + '%';
+      document.getElementById('statPotOdds').innerText = '4.5 : 1';
+      document.getElementById('statEV').innerText = '+' + (Math.random() * 15).toFixed(1);
+      document.getElementById('statOuts').innerText = Math.floor(Math.random() * 8 + 2);
+    }
+
+    // Realtime Firebase Listener & Timer Check
+    onValue(ref(db, 'rooms/table_1'), (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return;
+
+      if (data.pot !== undefined) {
+        document.getElementById('potDisplay').innerText = data.pot;
+        animatePotChips(data.pot);
+      }
+
+      if (data.buyInTime) {
+        const timeLeft = Math.max(0, Math.ceil((data.buyInTime - Date.now()) / 1000));
+        if (timeLeft > 0) {
+          document.getElementById('timerDisplay').innerText = `Game starts in: ${timeLeft}s`;
+        } else {
+          document.getElementById('timerDisplay').innerText = `🟢 Game Live - Deal Cards`;
+        }
+      }
+
+      if (data.players) {
+        document.getElementById('onlineCount').innerText = Object.keys(data.players).length;
+        if (data.players[myPlayerId]) {
+          myChips = data.players[myPlayerId].chips;
+          document.getElementById('playerChipCount').innerText = myChips;
+          syncUIControls();
+          update3DPlayerStacks(myChips);
+        }
+      }
+    });
+
+    // --- THREE.JS 3D HYPERREALISTIC CASINO ---
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x040406);
+    scene.fog = new THREE.FogExp2(0x040406, 0.03);
+
+    const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 6.5, 6.2);
+    camera.lookAt(0, -0.2, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    const ambientLight = new THREE.AmbientLight(0x222233, 1.4);
+    scene.add(ambientLight);
+
+    const tableLight = new THREE.PointLight(0xffeedd, 3.0, 16);
+    tableLight.position.set(0, 4.8, 0);
+    tableLight.castShadow = true;
+    tableLight.shadow.mapSize.width = 2048;
+    tableLight.shadow.mapSize.height = 2048;
+    tableLight.shadow.bias = -0.001;
+    scene.add(tableLight);
+
+    const canvasTex = document.createElement('canvas');
+    canvasTex.width = 1024; canvasTex.height = 1024;
+    const ctx = canvasTex.getContext('2d');
+    ctx.fillStyle = '#072e18';
+    ctx.fillRect(0, 0, 1024, 1024);
+    ctx.strokeStyle = '#0e542d';
+    ctx.lineWidth = 16;
+    ctx.beginPath(); ctx.arc(512, 512, 440, 0, Math.PI * 2); ctx.stroke();
+    const feltTexture = new THREE.CanvasTexture(canvasTex);
+    feltTexture.wrapS = THREE.RepeatWrapping;
+    feltTexture.wrapT = THREE.RepeatWrapping;
+
+    const tableGeo = new THREE.CylinderGeometry(3.3, 3.5, 0.35, 96);
+    const tableMat = new THREE.MeshStandardMaterial({ map: feltTexture, roughness: 0.75, metalness: 0.1 });
+    const table = new THREE.Mesh(tableGeo, tableMat);
+    table.position.y = -0.175;
+    table.receiveShadow = true;
+    scene.add(table);
+
+    const rimGeo = new THREE.TorusGeometry(3.4, 0.22, 24, 96);
+    const rimMat = new THREE.MeshStandardMaterial({ color: 0x120a05, roughness: 0.3, metalness: 0.2 });
+    const rim = new THREE.Mesh(rimGeo, rimMat);
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = -0.02;
+    rim.castShadow = true;
+    scene.add(rim);
+
+    function generateChipTexture(baseColor, stripeColor, valueText) {
+      const c = document.createElement('canvas');
+      c.width = 256; c.height = 256;
+      const cx = c.getContext('2d');
+      cx.fillStyle = baseColor;
+      cx.beginPath(); cx.arc(128, 128, 120, 0, Math.PI * 2); cx.fill();
+      cx.fillStyle = stripeColor;
+      for(let i=0; i<8; i++){
+        cx.beginPath();
+        cx.arc(128, 128, 120, (i*Math.PI/4)-0.15, (i*Math.PI/4)+0.15);
+        cx.arc(128, 128, 80, (i*Math.PI/4)+0.15, (i*Math.PI/4)-0.15, true);
+        cx.fill();
+      }
+      cx.fillStyle = '#ffffff';
+      cx.beginPath(); cx.arc(128, 128, 65, 0, Math.PI * 2); cx.fill();
+      cx.fillStyle = '#111111';
+      cx.font = 'bold 36px sans-serif';
+      cx.textAlign = 'center'; cx.textBaseline = 'middle';
+      cx.fillText(valueText, 128, 128);
+      return new THREE.CanvasTexture(c);
+    }
+
+    const tex100 = generateChipTexture('#b30000', '#ffffff', '100');
+    const tex50  = generateChipTexture('#0044cc', '#ffffff', '50');
+    const tex10  = generateChipTexture('#222222', '#d4af37', '10');
+
+    const chipGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.035, 48);
+    const playerChipsGroup = new THREE.Group();
+    scene.add(playerChipsGroup);
+
+    function update3DPlayerStacks(totalMoney) {
+      while(playerChipsGroup.children.length > 0) { 
+        playerChipsGroup.remove(playerChipsGroup.children[0]); 
+      }
+      if (totalMoney <= 0) return;
+
+      let remaining = totalMoney;
+      let count100 = Math.floor(remaining / 100); remaining %= 100;
+      let count50 = Math.floor(remaining / 50); remaining %= 50;
+      let count10 = Math.floor(remaining / 10);
+
+      buildStack(tex100, count100, -0.4, 1.9);
+      buildStack(tex50, count50, 0, 1.9);
+      buildStack(tex10, count10, 0.4, 1.9);
+    }
+
+    function buildStack(texture, count, posX, posZ) {
+      const mat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.25, metalness: 0.1 });
+      for (let i = 0; i < count; i++) {
+        const chip = new THREE.Mesh(chipGeo, mat);
+        const jitterX = (Math.random() - 0.5) * 0.008;
+        const jitterZ = (Math.random() - 0.5) * 0.008;
+        chip.position.set(posX + jitterX, i * 0.037 + 0.018, posZ + jitterZ);
+        chip.castShadow = true;
+        chip.receiveShadow = true;
+        playerChipsGroup.add(chip);
+      }
+    }
+
+    const potGroup = new THREE.Group();
+    scene.add(potGroup);
+
+    // Chaotic center pot pile with realistic scatter & rotations
+    function animatePotChips(potValue) {
+      while(potGroup.children.length > 0) potGroup.remove(potGroup.children[0]);
+      if (potValue <= 0) return;
+
+      const potChipCount = Math.min(Math.floor(potValue / 10), 40);
+      const mats = [
+        new THREE.MeshStandardMaterial({ map: tex100, roughness: 0.3 }),
+        new THREE.MeshStandardMaterial({ map: tex50, roughness: 0.3 }),
+        new THREE.MeshStandardMaterial({ map: tex10, roughness: 0.3 })
+      ];
+
+      for (let i = 0; i < potChipCount; i++) {
+        const randomMat = mats[Math.floor(Math.random() * mats.length)];
+        const chip = new THREE.Mesh(chipGeo, randomMat);
+        
+        const radius = Math.random() * 0.85; // Wider chaotic spread in the middle
+        const angle = Math.random() * Math.PI * 2;
+        
+        chip.position.set(Math.cos(angle) * radius, (i * 0.015) + (Math.random() * 0.02), Math.sin(angle) * radius);
+        
+        // Chaotic randomized tilts and rotations so it looks tossed in
+        chip.rotation.x = (Math.random() - 0.5) * 0.4;
+        chip.rotation.y = Math.random() * Math.PI;
+        chip.rotation.z = (Math.random() - 0.5) * 0.4;
+        
+        chip.castShadow = true;
+        potGroup.add(chip);
+      }
+    }
+
+    update3DPlayerStacks(myChips);
+
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      camera.position.x = Math.sin(t * 0.15) * 0.25;
+      camera.lookAt(0, -0.2, 0);
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
