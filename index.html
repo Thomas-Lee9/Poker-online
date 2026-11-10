@@ -184,7 +184,7 @@
     🔒 Admin HUD
   </button>
 
-  <!-- Operator Control Modal (No visible password hint) -->
+  <!-- Operator Control Modal -->
   <div id="operatorModal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 340px; background: rgba(15, 15, 20, 0.95); border: 2px solid #d4af37; border-radius: 8px; padding: 20px; color: #fff; z-index: 10000; box-shadow: 0 0 25px rgba(0,0,0,0.8);">
     <h3 style="margin-top: 0; color: #d4af37; border-bottom: 1px solid #444; padding-bottom: 8px;">Teacher Operator HUD</h3>
     
@@ -225,7 +225,7 @@
       <div class="hud-panel interactive" style="width: 240px;">
         <h3 id="playerDisplayName" style="font-size: 16px; margin-bottom: 5px;">Player</h3>
         <div style="font-size: 13px; color: #aaa;">Chips: <span id="playerChipCount" style="color: #d4af37; font-weight: bold;">350</span></div>
-        <div style="font-size: 11px; color: #888; margin-top: 3px;">Starting Stack: 1x$100, 3x$50, 10x$10</div>
+        <div style="font-size: 11px; color: #888; margin-top: 3px;">Seat: <span id="playerSeatLabel" style="color: #fff;">--</span></div>
         <button id="btnBuyIn" class="btn btn-buyin" style="width: 100%; margin-top: 10px;" onclick="playerBuyIn()">Buy In ($10)</button>
       </div>
       
@@ -233,6 +233,7 @@
         <h2 style="font-size: 18px; margin-bottom: 2px;">Table Pot</h2>
         <div id="potDisplay" style="font-size: 26px; color: #d4af37; font-weight: bold;">0</div>
         <div id="timerDisplay" style="font-size: 13px; color: #e74c3c; margin-top: 5px; font-weight: bold;">Waiting for first buy-in...</div>
+        <div id="turnDisplay" style="font-size: 12px; color: #d4af37; margin-top: 4px;">Turn: Waiting to start</div>
         <button class="btn btn-secondary" style="margin-top: 8px; padding: 4px 10px; font-size: 10px;" onclick="toggleStatsHUD()">Toggle Probability HUD</button>
       </div>
     </div>
@@ -251,10 +252,10 @@
       <div id="out-banner">YOU ARE ELIMINATED (OUT OF CHIPS)</div>
       <div id="action-bar" class="interactive">
         <button id="btnFold" class="btn" onclick="playerAction('fold')">Fold</button>
-        <button id="btnCheck" class="btn" onclick="playerAction('check')">Check</button>
+        <button id="btnMatch" class="btn" onclick="playerAction('match')">Match</button>
         
         <div class="raise-controls">
-          <button id="btnRaise" class="btn" onclick="submitRaise()">Bet / Raise</button>
+          <button id="btnRaise" class="btn" onclick="submitRaise()">Raise</button>
           <input type="range" id="raiseSlider" min="10" max="350" step="10" value="10" oninput="updateSliderLabel(this.value)">
           <span id="raiseValueLabel" style="min-width: 45px; font-weight: bold;">10</span>
         </div>
@@ -291,6 +292,8 @@
     let myChips = 350;
     let isEliminated = false;
     let hasBoughtIn = false;
+    let currentTurnSeat = null;
+    let isMyTurn = false;
 
     window.joinGameWithAlias = function() {
       const inputVal = document.getElementById('playerNameInput').value.trim();
@@ -299,6 +302,8 @@
       document.getElementById('nameModal').style.display = 'none';
 
       mySeat = Math.floor(Math.random() * 6);
+      document.getElementById('playerSeatLabel').innerText = `Seat ${mySeat}`;
+
       const playerRef = ref(db, `rooms/table_1/players/${myPlayerId}`);
       set(playerRef, {
         name: myName,
@@ -356,7 +361,7 @@
 
     window.adminResetGame = function() {
       if (!confirm('Reset table?')) return;
-      set(ref(db, 'rooms/table_1'), { pot: 0, communityCards: [], buyInTime: null, players: {} });
+      set(ref(db, 'rooms/table_1'), { pot: 0, communityCards: [], buyInTime: null, currentTurnSeat: null, players: {} });
       alert('Table reset.');
     };
 
@@ -381,6 +386,7 @@
         const updates = { pot: pot };
         if (!data.buyInTime) {
           updates.buyInTime = Date.now() + 20000; // 20 second timer
+          updates.currentTurnSeat = mySeat; // First person bought in starts turn
         }
         update(ref(db, 'rooms/table_1'), updates);
       });
@@ -388,20 +394,22 @@
 
     function syncUIControls() {
       const slider = document.getElementById('raiseSlider');
+      const canPlay = isMyTurn && !isEliminated;
+
       if (myChips <= 0) {
         isEliminated = true;
         document.getElementById('out-banner').style.display = 'block';
         document.getElementById('btnFold').disabled = true;
-        document.getElementById('btnCheck').disabled = true;
+        document.getElementById('btnMatch').disabled = true;
         document.getElementById('btnRaise').disabled = true;
         slider.disabled = true;
       } else {
         isEliminated = false;
         document.getElementById('out-banner').style.display = 'none';
-        document.getElementById('btnFold').disabled = false;
-        document.getElementById('btnCheck').disabled = false;
-        document.getElementById('btnRaise').disabled = false;
-        slider.disabled = false;
+        document.getElementById('btnFold').disabled = !canPlay;
+        document.getElementById('btnMatch').disabled = !canPlay;
+        document.getElementById('btnRaise').disabled = !canPlay;
+        slider.disabled = !canPlay;
         slider.min = Math.min(10, myChips);
         slider.max = myChips;
         slider.value = Math.min(10, myChips);
@@ -410,27 +418,40 @@
     }
 
     window.submitRaise = function() {
+      if (!isMyTurn || isEliminated) return;
       const amount = parseInt(document.getElementById('raiseSlider').value);
-      playerAction('bet', amount);
+      playerAction('raise', amount);
     };
 
-    window.playerAction = function(action, amount = 0) {
-      if (isEliminated) return;
+    window.playerAction = function(action) {
+      if (!isMyTurn || isEliminated) return;
 
-      if (action === 'bet') {
-        if (amount > myChips) amount = myChips;
-        myChips -= amount;
-        document.getElementById('playerChipCount').innerText = myChips;
-        
-        const status = myChips <= 0 ? 'out' : 'active';
-        update(ref(db, `rooms/table_1/players/${myPlayerId}`), { chips: myChips, status: status });
-        
-        get(ref(db, 'rooms/table_1/pot')).then(snap => {
-          const pot = (snap.val() || 0) + amount;
-          update(ref(db, 'rooms/table_1'), { pot: pot });
-        });
+      let cost = 0;
+      if (action === 'match') {
+        cost = 10; // Match current bet requirement
+      } else if (action === 'raise') {
+        cost = parseInt(document.getElementById('raiseSlider').value);
       }
-      syncUIControls();
+
+      if (cost > 0) {
+        if (cost > myChips) cost = myChips;
+        myChips -= cost;
+        document.getElementById('playerChipCount').innerText = myChips;
+      }
+
+      const status = myChips <= 0 ? 'out' : 'active';
+      
+      get(ref(db, 'rooms/table_1')).then(snap => {
+        const data = snap.val() || {};
+        const pot = (data.pot || 0) + cost;
+
+        // Calculate next turn anticlockwise (e.g. seat 5 -> 4 -> 3 -> 2 -> 1 -> 0 -> 5)
+        let nextSeat = (mySeat - 1 + 6) % 6;
+
+        update(ref(db, `rooms/table_1/players/${myPlayerId}`), { chips: myChips, status: status });
+        update(ref(db, 'rooms/table_1'), { pot: pot, currentTurnSeat: nextSeat });
+      });
+
       updateStatistics();
     };
 
@@ -441,7 +462,7 @@
       document.getElementById('statOuts').innerText = Math.floor(Math.random() * 8 + 2);
     }
 
-    // Realtime Firebase Listener & Timer Check
+    // Realtime Firebase Listener & Turn/Timer Sync
     onValue(ref(db, 'rooms/table_1'), (snapshot) => {
       const data = snapshot.val();
       if (!data) return;
@@ -455,8 +476,16 @@
         const timeLeft = Math.max(0, Math.ceil((data.buyInTime - Date.now()) / 1000));
         if (timeLeft > 0) {
           document.getElementById('timerDisplay').innerText = `Game starts in: ${timeLeft}s`;
+          document.getElementById('turnDisplay').innerText = `Waiting for buy-in phase...`;
+          isMyTurn = false;
         } else {
-          document.getElementById('timerDisplay').innerText = `🟢 Game Live - Deal Cards`;
+          document.getElementById('timerDisplay').innerText = `🟢 Game Live`;
+          
+          if (data.currentTurnSeat !== undefined) {
+            currentTurnSeat = data.currentTurnSeat;
+            isMyTurn = (mySeat === currentTurnSeat);
+            document.getElementById('turnDisplay').innerText = isMyTurn ? `👉 IT IS YOUR TURN!` : `Turn: Seat ${currentTurnSeat}`;
+          }
         }
       }
 
@@ -465,10 +494,10 @@
         if (data.players[myPlayerId]) {
           myChips = data.players[myPlayerId].chips;
           document.getElementById('playerChipCount').innerText = myChips;
-          syncUIControls();
           update3DPlayerStacks(myChips);
         }
       }
+      syncUIControls();
     });
 
     // --- THREE.JS 3D HYPERREALISTIC CASINO ---
@@ -593,7 +622,7 @@
       while(potGroup.children.length > 0) potGroup.remove(potGroup.children[0]);
       if (potValue <= 0) return;
 
-      const potChipCount = Math.min(Math.floor(potValue / 10), 40);
+      const potChipCount = Math.min(Math.floor(potValue / 10), 45);
       const mats = [
         new THREE.MeshStandardMaterial({ map: tex100, roughness: 0.3 }),
         new THREE.MeshStandardMaterial({ map: tex50, roughness: 0.3 }),
@@ -604,15 +633,15 @@
         const randomMat = mats[Math.floor(Math.random() * mats.length)];
         const chip = new THREE.Mesh(chipGeo, randomMat);
         
-        const radius = Math.random() * 0.85; // Wider chaotic spread in the middle
+        const radius = Math.random() * 0.85; 
         const angle = Math.random() * Math.PI * 2;
         
-        chip.position.set(Math.cos(angle) * radius, (i * 0.015) + (Math.random() * 0.02), Math.sin(angle) * radius);
+        chip.position.set(Math.cos(angle) * radius, (i * 0.012) + (Math.random() * 0.025), Math.sin(angle) * radius);
         
-        // Chaotic randomized tilts and rotations so it looks tossed in
-        chip.rotation.x = (Math.random() - 0.5) * 0.4;
+        // Chaotic randomized tilts and rotations simulating physical pile drops
+        chip.rotation.x = (Math.random() - 0.5) * 0.6;
         chip.rotation.y = Math.random() * Math.PI;
-        chip.rotation.z = (Math.random() - 0.5) * 0.4;
+        chip.rotation.z = (Math.random() - 0.5) * 0.6;
         
         chip.castShadow = true;
         potGroup.add(chip);
